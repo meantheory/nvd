@@ -128,6 +128,24 @@ class CVE(object):
         #return md5 sum of state
         pass
 
+    def csv(self):
+        r = '{0},{1},{2},{3},{4},{5},{6},{7},{8},{9},{10},{11},"{12}"'
+        return r.format(
+            self.number,
+            self.published,
+            self.lastmodified,
+            self.cvss_score,
+            self.cvss_access_vector,
+            self.cvss_access_complexity,
+            self.cvss_authentication,
+            self.cvss_confidentiality_impact,
+            self.cvss_integrity_impact,
+            self.cvss_availability_impact,
+            self.cvss_source,
+            self.cvss_generated,
+            self.summary
+        )
+
 def iterate_nvd_feed(filename):
 
     events = ('end', 'start-ns', 'end-ns')
@@ -189,14 +207,21 @@ def iterate_nvd_feed(filename):
                 while element.getprevious() is not None:
                     del element.getparent()[0]
 
+def make_csv(source_xml_file, target_csv_file):
+    target = open(target_csv_file, 'w')
+    for entry in iterate_nvd_feed(source_xml_file):
+        
+        target.write(entry.csv() + '\r\n')
+
+
+
 def run():
 
     #download()
     files = nvd_feeds_to_process()
-    for f in files:
 
-        for entry in iterate_nvd_feed(f):
-            print(entry)
+    for f in files:
+        make_csv(f, 'tstfile.csv')
 
 
 if __name__ == '__main__':
