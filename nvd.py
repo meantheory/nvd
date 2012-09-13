@@ -184,6 +184,7 @@ def iterate_nvd_feed(filename):
 def make_csv(source_xml_file, target_csv_file):
     print('Generating csv file: ' + target_csv_file)
     target = codecs.open(target_csv_file, 'w', 'utf-8')
+    target.write('CVENumber,PublishedDateTime,LastModifiedDateTime,CVSSScore,CVSSAccessVector,CVSSAccessComplexity,CVSSAuthentication,CVSSConfidentialityImpact,CVSSIntegrityImpact,CVSSAvailabilityImpact,CVSSSource,CVSSGeneratedDateTime,CVESummary\r\n')
     for entry in iterate_nvd_feed(source_xml_file):
         target.write(entry.csv() + '\r\n')
 
