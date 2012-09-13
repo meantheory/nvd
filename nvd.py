@@ -4,6 +4,7 @@ import requests
 import json
 from lxml import etree
 from collections import namedtuple
+import codecs
 
 default_datadir = './data'
 
@@ -38,7 +39,6 @@ def addendum_file(filename):
         return True
     else:
         return False
-
 
 def download(datadir = default_datadir, all_files = False):
 
@@ -77,7 +77,6 @@ def nvd_feeds_to_process(datadir = default_datadir):
                 break
 
     return feed_files
-
 
 class CVE(object):
     '''
@@ -129,8 +128,7 @@ class CVE(object):
         pass
 
     def csv(self):
-        r = '{0},{1},{2},{3},{4},{5},{6},{7},{8},{9},{10},{11},"{12}"'
-        return r.format(
+        r = '{0},{1},{2},{3},{4},{5},{6},{7},{8},{9},{10},{11},"'.format(
             self.number,
             self.published,
             self.lastmodified,
@@ -142,9 +140,10 @@ class CVE(object):
             self.cvss_integrity_impact,
             self.cvss_availability_impact,
             self.cvss_source,
-            self.cvss_generated,
-            self.summary
+            self.cvss_generated
         )
+
+        return r + self.summary + '"'
 
 def iterate_nvd_feed(filename):
 
@@ -208,21 +207,18 @@ def iterate_nvd_feed(filename):
                     del element.getparent()[0]
 
 def make_csv(source_xml_file, target_csv_file):
-    target = open(target_csv_file, 'w')
+    print('Generating csv file: ' + target_csv_file)
+    target = codecs.open(target_csv_file, 'w', 'utf-8')
     for entry in iterate_nvd_feed(source_xml_file):
-        
         target.write(entry.csv() + '\r\n')
-
-
 
 def run():
 
-    #download()
+    download()
     files = nvd_feeds_to_process()
 
     for f in files:
-        make_csv(f, 'tstfile.csv')
-
+        make_csv(f, f + '.csv')
 
 if __name__ == '__main__':
     
