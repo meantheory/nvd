@@ -1,9 +1,7 @@
 import os
 import sys
 import requests
-import json
 from lxml import etree
-from collections import namedtuple
 import codecs
 
 default_datadir = './data'
@@ -79,29 +77,6 @@ def nvd_feeds_to_process(datadir = default_datadir):
     return feed_files
 
 class CVE(object):
-    '''
-    Example XML structure of entry
-    <entry id="CVE-2010-4818">
-        <vuln:cve-id>CVE-2010-4818</vuln:cve-id>
-        <vuln:published-datetime>2012-09-05T19:55:01.443-04:00</vuln:published-datetime>
-        <vuln:last-modified-datetime>2012-09-06T09:40:56.863-04:00</vuln:last-modified-datetime>
-        <vuln:cvss>
-          <cvss:base_metrics>
-            <cvss:score>8.5</cvss:score>
-            <cvss:access-vector>NETWORK</cvss:access-vector>
-            <cvss:access-complexity>MEDIUM</cvss:access-complexity>
-            <cvss:authentication>SINGLE_INSTANCE</cvss:authentication>
-            <cvss:confidentiality-impact>COMPLETE</cvss:confidentiality-impact>
-            <cvss:integrity-impact>COMPLETE</cvss:integrity-impact>
-            <cvss:availability-impact>COMPLETE</cvss:availability-impact>
-            <cvss:source>http://nvd.nist.gov</cvss:source>
-            <cvss:generated-on-datetime>2012-09-06T09:37:00.000-04:00</cvss:generated-on-datetime>
-          </cvss:base_metrics>
-        </vuln:cvss>
-        <vuln:cwe id="CWE-20" />
-        <vuln:summary>The GLX extension in X.Org xserver 1.7.7 allows remote authenticated users to cause a denial of service (server crash) and possibly execute arbitrary code via (1) a crafted request that triggers a client swap in glx/glxcmdsswap.c; or (2) a crafted length or (3) a negative value in the screen field in a request to glx/glxcmds.c.</vuln:summary>
-      </entry>
-    '''
 
     published = None
     lastmodified = None
