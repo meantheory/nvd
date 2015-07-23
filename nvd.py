@@ -1,80 +1,99 @@
 import os
 import sys
+import sqlite3
 import requests
 from lxml import etree
 import codecs
+import datetime
+import gzip
 
 default_datadir = './data'
+etag_database = default_datadir + '/etag.db'
+feed_list_url = 'https://nvd.nist.gov/download.cfm'
 
-def nvd_feeds(url = 'http://nvd.nist.gov/download.cfm'):
-    start = 'https://nvd.nist.gov/static/feeds/xml/cve/'
-    end = '.xml'
+def nvd_feeds(url):
+    '''
+    this function will break fairly easily if anything about the NVD website 
+    changes. 
+
+    All it does is try to find a url that matches a very specific pattern. If 
+    the website changes those patterns then this will need to be changed as 
+    well.
+
+    This function could be made smarter to prevent this sort of hackery. For 
+    instance you might prefer zip files instead of gz files. No way of changing
+    that without changing script. 
+    '''
+
+    print('Querying {0} for NVD feeds'.format(url))
+
+    pattern = ('https://nvd.nist.gov/feeds/xml/cve/', '.xml.gz')
+
     r = requests.get(url)
     if r.status_code == requests.codes.ok:
         for element in r.text.split():
-            s = element.find(start)
-            if s > -1:
-                e = element.find(end)
-                yield element[s:e+len(end)]
+            #find beginning of url
+            s = element.find(pattern[0])
+            e = element.find(pattern[1])
 
-def download_feed(f, filename):
+            #if pattern discoverd, check for end
+            if s > -1 and e > -1:
+                
+                download_url = element[s:e+len(pattern[1])] 
+                yield download_url
+
+def download_feed(feed, filename, db):
     '''
     Download feed locally
-    '''
-    msg = 'Downloading NVD Feed from {0} to {1}'
-    print(msg.format(f, filename))
-    r = requests.get(f)
-    with open(filename, 'wb') as feed:
-        feed.write(r.content)
 
-def addendum_file(filename):
-    '''
-    the "modified" and "recent" files contain all the latest additions and updates
-    "recent" is a subset of "modified" that does not include updates to older CVE data as far as I can tell right now
-    '''
+    This tries to cache previous downloads. This is wholly untested and may 
+    not act as expected as I have thrown it together quickly
 
-    if filename.find('modified') > -1 or filename.find('recent') > -1:
-        return True
+    '''
+    print('Checking NVD Feed {0}'.format(feed))
+    r = requests.get(feed, stream=True)
+    tag = r.headers['etag'].strip('"')
+
+    dbcur = db.cursor()
+    
+    dbcur.execute('select etag from etags where etag = (?)', [(tag)])
+    ret = dbcur.fetchone()
+    cached = False if ret is None else True
+
+    if r.status_code == 200 and not cached:
+        print('    Downloading NVD Feed from {0} to {1}'.format(feed, filename))
+        with open(filename, 'wb') as f:
+            for chunk in r:
+                f.write(chunk)
+
+        dbcur.execute('insert into etags values (?)', [(tag)])
+        db.commit()
     else:
-        return False
+        print('    This is *probably* cached at {0}'.format(filename)) 
+        r.close()
 
-def download(datadir = default_datadir, all_files = False):
+def download(datadir, db, data_url):
+    '''
+    this will download all the nvd feed files 
+    '''
 
-    if not os.path.exists(datadir):
-        os.mkdir(datadir)
-
-    for feed in nvd_feeds():        
+    for feed in nvd_feeds(data_url):        
         filename = feed.split('/')[-1]
         filepath = os.path.join(datadir, filename)
-        this_file = addendum_file(filename)
 
-        if not os.path.exists(filepath):
-            this_file = True
+        download_feed(feed, filepath, db)
 
-        if all_files or this_file:
-            download_feed(feed, filepath)
+def nvd_feeds_to_process(datadir):
 
-def nvd_feeds_to_process(datadir = default_datadir):
-    '''
-    return list of files to process
-    if a file named init_load is present only return modified_feed
-    if init_load not present then return all files that are not modfied or recent
-    '''
-    feed_files = []
-    modified_feed = 'nvdcve-2.0-modified.xml'
-    init_load = 'init_load'
+    today = datetime.datetime.today()
+    compressed_files = [os.path.join(datadir, f) for f in os.listdir(datadir) if f.endswith('.xml.gz')]
 
-    if os.path.exists(os.path.join(datadir, init_load)):
-        feed_files.append(os.path.join(datadir, modified_feed))
-    else:
-        for root, dirs, files in os.walk(datadir):
-            if datadir == root:
-                for f in files:
-                    if f.endswith('.xml') and not addendum_file(f):
-                        feed_files.append(os.path.join(datadir, f))
-                break
+    for f in compressed_files:
+        mtime = datetime.datetime.fromtimestamp(os.path.getmtime(f))
+        modified_today = (today - mtime) < datetime.timedelta(days=1)
 
-    return feed_files
+        if modified_today: 
+            yield f
 
 class CVE(object):
 
@@ -98,10 +117,6 @@ class CVE(object):
         reprstr = 'ID: {0} CVSS SCORE: {1} - {2}'
         return reprstr.format(self.number, self.cvss_score, self.summary)
 
-    def state(self):
-        #return md5 sum of state
-        pass
-
     def csv(self):
         r = '{0},{1},{2},{3},{4},{5},{6},{7},{8},{9},{10},{11},"'.format(
             self.number,
@@ -123,7 +138,8 @@ class CVE(object):
 def iterate_nvd_feed(filename):
 
     events = ('end', 'start-ns', 'end-ns')
-    context = etree.iterparse(filename, events=events)
+    sf = gzip.open(filename, 'rb')
+    context = etree.iterparse(sf, events=events)
     
     for event, element in context:
         if event == 'end':
@@ -183,18 +199,31 @@ def iterate_nvd_feed(filename):
 
 def make_csv(source_xml_file, target_csv_file):
     print('Generating csv file: ' + target_csv_file)
+
     target = codecs.open(target_csv_file, 'w', 'utf-8')
     target.write('CVENumber,PublishedDateTime,LastModifiedDateTime,CVSSScore,CVSSAccessVector,CVSSAccessComplexity,CVSSAuthentication,CVSSConfidentialityImpact,CVSSIntegrityImpact,CVSSAvailabilityImpact,CVSSSource,CVSSGeneratedDateTime,CVESummary\r\n')
     for entry in iterate_nvd_feed(source_xml_file):
         target.write(entry.csv() + '\r\n')
 
-def run():
+def run(datadir=default_datadir ,dbfile=etag_database, data_url=feed_list_url):
 
-    download()
-    files = nvd_feeds_to_process()
+    # setup data directory
+    if not os.path.exists(datadir):
+        os.mkdir(datadir)
 
-    for f in files:
-        make_csv(f, f + '.csv')
+    # setup database
+    conn = sqlite3.connect(dbfile)
+    cur = conn.cursor()
+    cur.execute('create table if not exists etags (etag text)')
+
+    download(datadir, conn, data_url)
+    files = nvd_feeds_to_process(datadir) 
+
+    for f in files: 
+        make_csv(f, f.rstrip('.gz') + '.csv')
+
+    conn.commit()
+    conn.close()
 
 if __name__ == '__main__':
     
